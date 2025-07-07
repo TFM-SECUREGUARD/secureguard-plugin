@@ -15,6 +15,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.secureguard.analysis.FeatureExtractor;
 import com.secureguard.analysis.ModelService;
+import com.secureguard.analysis.SeverityCalculator;
 import com.secureguard.model.OWASPCategory;
 import com.secureguard.model.SecurityIssue;
 import com.secureguard.model.Severity;
@@ -119,9 +120,16 @@ public class AnalyzeFileAction extends AnAction {
                                 if (result.isVulnerable()) {
                                     // Crear issue dentro de un read action
                                     ApplicationManager.getApplication().runReadAction(() -> {
+                                        // Calcular severidad usando la categoría y features
+                                        Severity severity = SeverityCalculator.calculateSeverity(
+                                                result.getCategory(),
+                                                result.getConfidence(),
+                                                features
+                                        );
+
                                         SecurityIssue issue = new SecurityIssue(
                                                 result.getCategory(),
-                                                Severity.fromConfidence(result.getConfidence(), true),
+                                                severity,
                                                 generateDescription(result.getCategory(), method),
                                                 generateRecommendation(result.getCategory()),
                                                 method,
@@ -171,9 +179,16 @@ public class AnalyzeFileAction extends AnAction {
 
                                 if (result.isVulnerable()) {
                                     ApplicationManager.getApplication().runReadAction(() -> {
+                                        // Calcular severidad usando la categoría y features
+                                        Severity severity = SeverityCalculator.calculateSeverity(
+                                                result.getCategory(),
+                                                result.getConfidence(),
+                                                features
+                                        );
+
                                         SecurityIssue issue = new SecurityIssue(
                                                 result.getCategory(),
-                                                Severity.fromConfidence(result.getConfidence(), true),
+                                                severity,
                                                 generateDescription(result.getCategory(), psiClass),
                                                 generateRecommendation(result.getCategory()),
                                                 psiClass,

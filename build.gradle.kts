@@ -17,6 +17,7 @@ java {
 
 dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime:1.16.3")
+    implementation("com.google.code.gson:gson:2.10.1")
     implementation("com.github.javaparser:javaparser-core:3.25.8")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation("org.slf4j:slf4j-api:2.0.9")

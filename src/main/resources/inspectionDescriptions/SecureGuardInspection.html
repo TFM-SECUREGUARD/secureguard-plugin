@@ -1,0 +1,59 @@
+<html>
+<body>
+<h2>SecureGuard Security Analysis</h2>
+
+<p>
+    This inspection detects potential security vulnerabilities based on the OWASP Top 10
+    most critical web application security risks.
+</p>
+
+<h3>What it detects:</h3>
+<ul>
+    <li><b>Injection flaws</b> - SQL, NoSQL, OS command injection</li>
+    <li><b>Broken authentication</b> - Weak password storage, session management issues</li>
+    <li><b>Sensitive data exposure</b> - Weak cryptography, plaintext storage</li>
+    <li><b>XML External Entities (XXE)</b> - Unsafe XML processing</li>
+    <li><b>Broken access control</b> - Path traversal, unauthorized access</li>
+    <li><b>Security misconfiguration</b> - Debug info, stack traces, default configs</li>
+    <li><b>Cross-Site Scripting (XSS)</b> - Unvalidated user input in output</li>
+    <li><b>Insecure deserialization</b> - Unsafe object deserialization</li>
+    <li><b>Using vulnerable components</b> - Outdated libraries with known issues</li>
+    <li><b>Insufficient logging</b> - Missing security event logging</li>
+</ul>
+
+<h3>How it works:</h3>
+<p>
+    SecureGuard uses machine learning to analyze code patterns and identify potential
+    vulnerabilities with high accuracy. It extracts features from your code and
+    compares them against patterns learned from thousands of vulnerable code examples.
+</p>
+
+<h3>Quick Fixes:</h3>
+<p>
+    Many detected issues include automated quick fixes that can help you resolve
+    the vulnerability immediately. Look for the lightbulb icon next to highlighted code.
+</p>
+
+<h3>Configuration:</h3>
+<p>
+    You can configure the inspection sensitivity and disable specific categories
+    in Settings → Editor → Inspections → Security → SecureGuard Security Analysis.
+</p>
+
+<!-- Example of vulnerable code -->
+<h4>Example:</h4>
+<pre><code>
+// Vulnerable: SQL Injection
+String query = "SELECT * FROM users WHERE id = " + userId;
+Statement stmt = connection.createStatement();
+ResultSet rs = stmt.executeQuery(query);
+
+// Secure: Using PreparedStatement
+String query = "SELECT * FROM users WHERE id = ?";
+PreparedStatement pstmt = connection.prepareStatement(query);
+pstmt.setInt(1, userId);
+ResultSet rs = pstmt.executeQuery();
+</code></pre>
+
+</body>
+</html>

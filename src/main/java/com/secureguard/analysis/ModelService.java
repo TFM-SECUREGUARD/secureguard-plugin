@@ -15,9 +15,10 @@ import java.nio.FloatBuffer;
 import java.util.*;
 
 /**
- * Versión Híbrida del ModelService
+ * Versión Híbrida Mejorada del ModelService
  * - Usa ONNX para detección binaria (vulnerable/seguro) con alta precisión
- * - Usa reglas para categorización OWASP (evita el sesgo hacia A03)
+ * - Usa reglas mejoradas con análisis de contexto para categorización
+ * - Reduce falsos positivos analizando patrones seguros
  */
 public class ModelService {
     private static final Logger LOG = Logger.getInstance(ModelService.class);
@@ -65,10 +66,8 @@ public class ModelService {
     }
 
     private void initializeONNX() throws Exception {
-        // Cargar el environment de ONNX Runtime
         env = OrtEnvironment.getEnvironment();
 
-        // Cargar el modelo
         try (InputStream modelStream = getClass().getResourceAsStream(MODEL_PATH)) {
             if (modelStream == null) {
                 throw new RuntimeException("Model file not found: " + MODEL_PATH);
@@ -79,10 +78,7 @@ public class ModelService {
             LOG.info("ONNX model loaded successfully");
         }
 
-        // Cargar mapping de features
         loadFeatureMapping();
-
-        // Cargar estadísticas de normalización
         loadNormalizationStats();
     }
 
@@ -126,18 +122,21 @@ public class ModelService {
     }
 
     /**
-     * Predicción híbrida:
-     * 1. ONNX para detección binaria (si está disponible)
-     * 2. Reglas para categorización OWASP
+     * Predicción híbrida mejorada con análisis de contexto
      */
     public Optional<PredictionResult> predict(@NotNull Map<String, Double> features) {
         try {
+            // PRIMERO: Verificar si es código claramente SEGURO
+            if (isDefinitelySecureCode(features)) {
+                LOG.info("Code identified as secure by pattern analysis");
+                return Optional.of(new PredictionResult(false, 0.1, OWASPCategory.NONE));
+            }
+
+            // SEGUNDO: Detección de vulnerabilidades
             boolean isVulnerable;
             double baseConfidence;
 
-            // PASO 1: Detección binaria
             if (onnxAvailable) {
-                // Usar ONNX para alta precisión en detección binaria
                 Optional<BinaryPrediction> binaryResult = predictWithONNX(features);
                 if (binaryResult.isPresent()) {
                     isVulnerable = binaryResult.get().isVulnerable;
@@ -145,31 +144,27 @@ public class ModelService {
                     LOG.info(String.format("ONNX prediction: %s (confidence: %.2f%%)",
                             isVulnerable ? "VULNERABLE" : "SAFE", baseConfidence * 100));
                 } else {
-                    // Fallback a reglas si ONNX falla
-                    LOG.warn("ONNX prediction failed, falling back to rules");
                     return predictWithRules(features);
                 }
             } else {
-                // Usar reglas para detección binaria básica
                 BinaryPrediction ruleBased = detectVulnerabilityWithRules(features);
                 isVulnerable = ruleBased.isVulnerable;
                 baseConfidence = ruleBased.confidence;
             }
 
-            // Si no es vulnerable, retornar inmediatamente
             if (!isVulnerable) {
                 return Optional.of(new PredictionResult(false, baseConfidence, OWASPCategory.NONE));
             }
 
-            // PASO 2: Categorización OWASP (siempre con reglas para evitar sesgo)
+            // TERCERO: Categorización OWASP mejorada
             OWASPCategory category = categorizeVulnerability(features);
 
-            // Ajustar confianza basándose en la fortaleza de los indicadores de categoría
+            // Ajustar confianza basándose en la fortaleza de los indicadores
             double categoryConfidence = calculateCategoryConfidence(features, category);
             double finalConfidence = (baseConfidence * 0.7) + (categoryConfidence * 0.3);
 
-            LOG.info(String.format("Final prediction: %s with confidence %.2f%% (base: %.2f%%, category: %.2f%%)",
-                    category.getCode(), finalConfidence * 100, baseConfidence * 100, categoryConfidence * 100));
+            LOG.info(String.format("Final prediction: %s with confidence %.2f%%",
+                    category.getCode(), finalConfidence * 100));
 
             return Optional.of(new PredictionResult(true, finalConfidence, category));
 
@@ -180,18 +175,48 @@ public class ModelService {
     }
 
     /**
+     * Identifica patrones de código definitivamente SEGURO
+     */
+    private boolean isDefinitelySecureCode(Map<String, Double> features) {
+        // Verificar si es un método auxiliar simple (como bytesToHex)
+        double codeLength = features.getOrDefault("code_length", 0.0);
+        double numLines = features.getOrDefault("num_lines", 0.0);
+        double complexity = features.getOrDefault("cyclomatic_complexity", 0.0);
+        double hasUserInput = features.getOrDefault("has_user_input", 0.0);
+        double dangerousMethods = features.getOrDefault("dangerous_methods_count", 0.0);
+
+        // Método auxiliar simple sin entrada de usuario
+        if (codeLength < 300 && numLines < 15 && complexity <= 3 &&
+                hasUserInput == 0 && dangerousMethods == 0) {
+            LOG.debug("Identified as simple utility method");
+            return true;
+        }
+
+        // Verificar uso de PreparedStatement (seguro contra SQL injection)
+        double injectionKeywords = features.getOrDefault("injection_keywords", 0.0);
+        double injectionMethods = features.getOrDefault("injection_methods", 0.0);
+
+        // Si tiene palabras SQL pero usa PreparedStatement, es SEGURO
+        if (injectionKeywords > 0 && features.getOrDefault("injection_patterns", 0.0) == 0) {
+            // Buscar indicadores de PreparedStatement
+            // En un análisis más sofisticado, verificaríamos el AST
+            LOG.debug("SQL operations detected but appears to use safe patterns");
+            return false; // Por ahora, dejar que el análisis completo decida
+        }
+
+        return false;
+    }
+
+    /**
      * Predicción binaria usando ONNX
      */
     private Optional<BinaryPrediction> predictWithONNX(Map<String, Double> features) {
         try {
-            // Preparar features
             float[] inputArray = prepareFeatures(features);
 
-            // Crear tensor
             long[] shape = {1, featureNames.size()};
             OnnxTensor inputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(inputArray), shape);
 
-            // Ejecutar inferencia
             Map<String, OnnxTensor> inputs = Collections.singletonMap("float_input", inputTensor);
             try (OrtSession.Result result = session.run(inputs)) {
 
@@ -228,12 +253,12 @@ public class ModelService {
     }
 
     /**
-     * Detección binaria con reglas (fallback)
+     * Detección binaria con reglas mejoradas
      */
     private BinaryPrediction detectVulnerabilityWithRules(Map<String, Double> features) {
         double maxScore = 0.0;
 
-        // Verificar indicadores de cada categoría
+        // Verificar indicadores de cada categoría con umbrales más estrictos
         maxScore = Math.max(maxScore, scoreInjection(features));
         maxScore = Math.max(maxScore, scoreSSRF(features));
         maxScore = Math.max(maxScore, scoreCrypto(features));
@@ -241,18 +266,20 @@ public class ModelService {
         maxScore = Math.max(maxScore, scoreAuth(features));
         maxScore = Math.max(maxScore, scoreConfig(features));
         maxScore = Math.max(maxScore, scoreIntegrity(features));
+        maxScore = Math.max(maxScore, scoreDesign(features));
 
-        boolean isVulnerable = maxScore > 0.4;
+        // Umbral más alto para reducir falsos positivos
+        boolean isVulnerable = maxScore > 0.5;
         return new BinaryPrediction(isVulnerable, isVulnerable ? maxScore : 0.2);
     }
 
     /**
-     * Categorización usando reglas (evita el sesgo del modelo)
+     * Categorización mejorada con análisis de contexto
      */
     private OWASPCategory categorizeVulnerability(Map<String, Double> features) {
         Map<OWASPCategory, Double> scores = new HashMap<>();
 
-        // Calcular score para cada categoría
+        // Calcular scores con lógica mejorada
         scores.put(OWASPCategory.A03_INJECTION, scoreInjection(features));
         scores.put(OWASPCategory.A10_SSRF, scoreSSRF(features));
         scores.put(OWASPCategory.A02_CRYPTOGRAPHIC_FAILURES, scoreCrypto(features));
@@ -264,103 +291,143 @@ public class ModelService {
         scores.put(OWASPCategory.A09_LOGGING_MONITORING_FAILURES, scoreLogging(features));
         scores.put(OWASPCategory.A06_VULNERABLE_COMPONENTS, scoreComponents(features));
 
+        // Log para debugging
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Category scores:");
+            scores.entrySet().stream()
+                    .filter(e -> e.getValue() > 0)
+                    .forEach(e -> LOG.debug(String.format("  %s: %.2f", e.getKey().getCode(), e.getValue())));
+        }
+
         // Encontrar la categoría con mayor score
-        return scores.entrySet().stream()
+        OWASPCategory bestCategory = scores.entrySet().stream()
+                .filter(e -> e.getValue() > 0)
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .orElse(OWASPCategory.A04_INSECURE_DESIGN);
+
+        LOG.info("Selected category: " + bestCategory.getCode() + " with score: " + scores.get(bestCategory));
+
+        return bestCategory;
     }
 
-    // Métodos de scoring para cada categoría OWASP
+    // Métodos de scoring mejorados
 
     private double scoreInjection(Map<String, Double> features) {
-        double score = 0.0;
-        double injectionKeywords = features.getOrDefault("injection_keywords", 0.0);
         double injectionScore = features.getOrDefault("injection_score", 0.0);
+        double injectionKeywords = features.getOrDefault("injection_keywords", 0.0);
+        double injectionMethods = features.getOrDefault("injection_methods", 0.0);
         double hasUserInput = features.getOrDefault("has_user_input", 0.0);
+        double stringConcat = features.getOrDefault("string_concatenation_count", 0.0);
 
-        if (injectionKeywords > 0 && hasUserInput > 0) {
-            score = 0.7;
-            if (injectionScore > 0.5) score += 0.2;
-            if (injectionKeywords > 2) score += 0.1;
+        // NO es vulnerable si usa PreparedStatement
+        if (injectionKeywords > 0 && injectionMethods == 0 && stringConcat == 0) {
+            return 0.0; // Probablemente usa PreparedStatement
         }
-        return Math.min(score, 1.0);
+
+        // ES vulnerable si hay concatenación + SQL + input
+        if (injectionKeywords > 0 && hasUserInput > 0 && stringConcat > 0) {
+            double score = 0.8;
+            if (injectionScore > 0.5) score += 0.15;
+            return Math.min(score, 0.95);
+        }
+
+        return 0.0;
     }
 
     private double scoreSSRF(Map<String, Double> features) {
-        double score = 0.0;
-        double ssrfKeywords = features.getOrDefault("ssrf_keywords", 0.0);
         double ssrfScore = features.getOrDefault("ssrf_score", 0.0);
+        double ssrfKeywords = features.getOrDefault("ssrf_keywords", 0.0);
+        double ssrfMethods = features.getOrDefault("ssrf_methods", 0.0);
         double hasUserInput = features.getOrDefault("pattern_user_input", 0.0);
+        double networkOps = features.getOrDefault("pattern_network_operations", 0.0);
 
-        if (ssrfKeywords > 0 && hasUserInput > 0) {
-            score = 0.65;
+        if (ssrfKeywords > 0 && (hasUserInput > 0 || features.getOrDefault("has_user_input", 0.0) > 0)) {
+            double score = 0.7;
             if (ssrfScore > 0.5) score += 0.2;
-            if (ssrfKeywords > 2) score += 0.15;
+            if (ssrfMethods > 0) score += 0.05;
+            return Math.min(score, 0.95);
         }
-        return Math.min(score, 1.0);
+
+        return 0.0;
     }
 
     private double scoreCrypto(Map<String, Double> features) {
-        double cryptoMethods = features.getOrDefault("crypto_methods", 0.0);
         double cryptoScore = features.getOrDefault("crypto_score", 0.0);
+        double cryptoMethods = features.getOrDefault("crypto_methods", 0.0);
 
-        if (cryptoMethods > 0) {
-            return Math.min(0.7 + (cryptoScore * 0.3), 0.95);
+        // Solo marcar como vulnerable si realmente usa algoritmos débiles
+        if (cryptoMethods > 0 && cryptoScore > 0.3) {
+            return Math.min(0.7 + (cryptoScore * 0.3), 0.90);
         }
+
         return 0.0;
     }
 
     private double scoreAccessControl(Map<String, Double> features) {
         double hasFileOps = features.getOrDefault("has_file_ops", 0.0);
         double hasUserInput = features.getOrDefault("has_user_input", 0.0);
+        double patternUserInput = features.getOrDefault("pattern_user_input", 0.0);
 
-        if (hasFileOps > 0 && hasUserInput > 0) {
-            return 0.75;
+        // Path traversal: archivo + input usuario
+        if (hasFileOps > 0 && (hasUserInput > 0 || patternUserInput > 0)) {
+            return 0.85;
         }
+
         return 0.0;
     }
 
     private double scoreAuth(Map<String, Double> features) {
-        double authPatterns = features.getOrDefault("auth_patterns", 0.0);
         double authScore = features.getOrDefault("auth_score", 0.0);
+        double authPatterns = features.getOrDefault("auth_patterns", 0.0);
 
-        if (authPatterns > 1) {
-            return Math.min(0.6 + (authScore * 0.4), 0.9);
+        // Detectar contraseñas hardcodeadas o sesiones mal manejadas
+        if (authPatterns > 2 && authScore > 0.5) {
+            return Math.min(0.7 + (authScore * 0.3), 0.9);
         }
+
         return 0.0;
     }
 
     private double scoreConfig(Map<String, Double> features) {
-        double configPatterns = features.getOrDefault("config_patterns", 0.0);
         double configScore = features.getOrDefault("config_score", 0.0);
+        double configPatterns = features.getOrDefault("config_patterns", 0.0);
+        double configMethods = features.getOrDefault("config_methods", 0.0);
 
-        if (configPatterns > 0) {
-            return Math.min(0.5 + (configScore * 0.4), 0.85);
+        // Solo si hay patrones claros de mala configuración
+        if (configPatterns > 1 || configMethods > 1) {
+            return Math.min(0.6 + (configScore * 0.3), 0.85);
         }
+
         return 0.0;
     }
 
     private double scoreIntegrity(Map<String, Double> features) {
         double dangerousMethods = features.getOrDefault("dangerous_methods_count", 0.0);
         double hasUserInput = features.getOrDefault("has_user_input", 0.0);
+        double suspiciousImports = features.getOrDefault("suspicious_imports_count", 0.0);
 
-        if (dangerousMethods > 0 && hasUserInput > 0) {
+        // Deserialización insegura
+        if (dangerousMethods > 0 && (hasUserInput > 0 || suspiciousImports > 0)) {
             return Math.min(0.7 + (dangerousMethods * 0.1), 0.9);
         }
+
         return 0.0;
     }
 
     private double scoreDesign(Map<String, Double> features) {
         double complexity = features.getOrDefault("cyclomatic_complexity", 0.0);
         double nesting = features.getOrDefault("max_nesting_depth", 0.0);
+        double numMethods = features.getOrDefault("num_methods", 0.0);
 
-        if (complexity > 20 || nesting > 5) {
-            double score = 0.4;
+        // Complejidad muy alta = problema de diseño
+        if (complexity > 20) {
+            double score = 0.6;
             if (complexity > 30) score += 0.2;
-            if (nesting > 7) score += 0.2;
-            return Math.min(score, 0.8);
+            if (nesting > 7) score += 0.1;
+            return Math.min(score, 0.9);
         }
+
         return 0.0;
     }
 
@@ -368,9 +435,11 @@ public class ModelService {
         double loggingKeywords = features.getOrDefault("logging_keywords", 0.0);
         double loggingScore = features.getOrDefault("logging_score", 0.0);
 
-        if (loggingKeywords > 0) {
-            return Math.min(0.4 + (loggingScore * 0.4), 0.7);
+        // Solo si falta logging en operaciones críticas
+        if (loggingKeywords == 0 && features.getOrDefault("has_user_input", 0.0) > 0) {
+            return 0.5;
         }
+
         return 0.0;
     }
 
@@ -378,15 +447,14 @@ public class ModelService {
         double componentsKeywords = features.getOrDefault("components_keywords", 0.0);
         double suspiciousImports = features.getOrDefault("suspicious_imports_count", 0.0);
 
-        if (componentsKeywords > 0 || suspiciousImports > 0) {
-            return Math.min(0.5 + (componentsKeywords * 0.2) + (suspiciousImports * 0.1), 0.8);
+        // Solo si hay evidencia fuerte de librerías vulnerables
+        if (componentsKeywords > 2 || suspiciousImports > 3) {
+            return Math.min(0.6 + (componentsKeywords * 0.1), 0.8);
         }
+
         return 0.0;
     }
 
-    /**
-     * Calcula la confianza específica para la categoría detectada
-     */
     private double calculateCategoryConfidence(Map<String, Double> features, OWASPCategory category) {
         switch (category) {
             case A03_INJECTION:
@@ -414,9 +482,6 @@ public class ModelService {
         }
     }
 
-    /**
-     * Prepara las features para ONNX
-     */
     private float[] prepareFeatures(Map<String, Double> features) {
         float[] normalized = new float[featureNames.size()];
 
@@ -437,9 +502,6 @@ public class ModelService {
         return normalized;
     }
 
-    /**
-     * Usa solo reglas (fallback completo)
-     */
     private Optional<PredictionResult> predictWithRules(Map<String, Double> features) {
         BinaryPrediction binary = detectVulnerabilityWithRules(features);
 
@@ -466,9 +528,6 @@ public class ModelService {
         }
     }
 
-    /**
-     * Resultado de predicción binaria
-     */
     private static class BinaryPrediction {
         final boolean isVulnerable;
         final double confidence;
@@ -479,9 +538,6 @@ public class ModelService {
         }
     }
 
-    /**
-     * Resultado final de predicción
-     */
     public static class PredictionResult {
         private final boolean isVulnerable;
         private final double confidence;

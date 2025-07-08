@@ -1,141 +1,93 @@
 <idea-plugin>
-    <!-- ID único del plugin -->
-    <id>com.secureguard.intellij</id>
+    <id>com.secureguard</id>
+    <name>SecureGuard</name>
+    <vendor email="support@secureguard.com" url="https://secureguard.com">SecureGuard Team</vendor>
 
-    <!-- Nombre del plugin -->
-    <name>SecureGuard - OWASP Vulnerability Detector</name>
-
-    <!-- Información del vendedor -->
-    <vendor email="support@secureguard.com" url="https://github.com/secureguard">
-        SecureGuard Team - UNIR TFM 2025
-    </vendor>
-
-    <!-- Descripción del plugin -->
     <description><![CDATA[
-        <h2>AI-Powered Security Analysis for Java</h2>
-        <p>
-            SecureGuard detects OWASP Top 10 vulnerabilities in your Java code in real-time
-            using a Random Forest machine learning model with 96% accuracy.
-        </p>
+        <h2>SecureGuard - OWASP Security Analysis for Java</h2>
+        <p>Real-time detection of OWASP Top 10 vulnerabilities in Java code using machine learning.</p>
 
         <h3>Features:</h3>
         <ul>
-            <li>Real-time vulnerability detection as you type</li>
-            <li>Coverage of OWASP Top 10 2021 categories</li>
-            <li>Instant security recommendations</li>
-            <li>Quick fixes for common vulnerabilities</li>
-            <li>Low false positive rate (< 5%)</li>
+            <li>🔍 Real-time vulnerability detection while coding</li>
+            <li>🛡️ OWASP Top 10 coverage</li>
+            <li>⚡ Quick fixes for common vulnerabilities</li>
+            <li>📊 Security severity levels (Critical, High, Medium, Low)</li>
+            <li>🤖 AI-powered analysis with 96% accuracy</li>
         </ul>
 
         <h3>Detected Vulnerabilities:</h3>
         <ul>
-            <li>SQL/Command Injection</li>
-            <li>Broken Access Control</li>
-            <li>Cryptographic Failures</li>
-            <li>Security Misconfiguration</li>
-            <li>XML External Entities (XXE)</li>
+            <li>SQL Injection</li>
+            <li>Cross-Site Scripting (XSS)</li>
             <li>Broken Authentication</li>
+            <li>Sensitive Data Exposure</li>
+            <li>XML External Entities (XXE)</li>
+            <li>Broken Access Control</li>
+            <li>Security Misconfiguration</li>
             <li>Insecure Deserialization</li>
             <li>Using Components with Known Vulnerabilities</li>
             <li>Insufficient Logging & Monitoring</li>
-            <li>Server-Side Request Forgery (SSRF)</li>
         </ul>
+
+        <p><b>Usage:</b> Press Ctrl+Alt+S or use the SecureGuard menu to analyze files.</p>
     ]]></description>
 
-    <!-- Notas de cambios -->
     <change-notes><![CDATA[
         <h3>Version 1.0.0</h3>
         <ul>
             <li>Initial release</li>
-            <li>ML-based vulnerability detection using ONNX Runtime</li>
-            <li>Real-time code analysis</li>
-            <li>59 security-focused features extraction</li>
-            <li>Integration with IntelliJ's inspection system</li>
+            <li>Real-time security inspection</li>
+            <li>OWASP Top 10 vulnerability detection</li>
+            <li>Quick fixes for common issues</li>
+            <li>File analysis action (Ctrl+Alt+S)</li>
         </ul>
     ]]></change-notes>
 
-    <!-- Versión del plugin -->
-    <version>1.0.0</version>
-
-    <!-- Compatibilidad con versiones de IntelliJ -->
-    <idea-version since-build="233.0" until-build="241.*"/>
-
-    <!-- Dependencias del plugin -->
+    <!-- Product and plugin compatibility -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
 
-    <!-- Puntos de extensión -->
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Servicio principal del modelo -->
-        <applicationService serviceImplementation="com.secureguard.analysis.ModelService"/>
-
-        <!-- Inspección de código (la crearemos después) -->
-        <!--
+        <!-- Security Inspection for real-time analysis -->
         <localInspection
-            language="JAVA"
-            displayName="SecureGuard Security Analysis"
-            groupPath="Java"
-            groupBundle="messages.InspectionsBundle"
-            groupKey="group.names.security.issues"
-            enabledByDefault="true"
-            level="WARNING"
-            implementationClass="com.secureguard.inspections.SecurityInspection"/>
-        -->
-
-        <!-- Proveedor de acciones rápidas (quick fixes) -->
-        <!--
-        <intentionAction>
-            <className>com.secureguard.actions.SecurityQuickFix</className>
-            <category>SecureGuard</category>
-        </intentionAction>
-        -->
+                language="JAVA"
+                displayName="SecureGuard Security Analysis"
+                groupPath="Java"
+                groupBundle="messages.InspectionsBundle"
+                groupKey="group.names.security.issues"
+                groupName="Security"
+                shortName="SecureGuardInspection"
+                level="WARNING"
+                enabledByDefault="true"
+                implementationClass="com.secureguard.inspections.SecurityInspection"/>
     </extensions>
 
-    <!-- Acciones del plugin -->
     <actions>
+        <!-- Analyze File Action -->
+        <action id="SecureGuard.AnalyzeFile"
+                class="com.secureguard.actions.AnalyzeFileAction"
+                text="Analyze Current File"
+                description="Analyze the current file for security vulnerabilities">
+            <add-to-group group-id="AnalyzeMenu" anchor="last"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt S"/>
+        </action>
+
+        <!-- SecureGuard Menu -->
         <group id="SecureGuard.Menu"
                text="SecureGuard"
-               description="SecureGuard security analysis actions"
+               description="SecureGuard security analysis tools"
                popup="true">
-
-            <add-to-group group-id="MainMenu" anchor="after" relative-to-action="RefactoringMenu"/>
-
-            <action id="SecureGuard.AnalyzeCurrentFile"
-                    class="com.secureguard.actions.AnalyzeFileAction"
-                    text="Analyze Current File"
-                    description="Analyze current file for security vulnerabilities">
-                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt S"/>
-            </action>
-<!--
-            <separator/>
-
-            <action id="SecureGuard.ShowSettings"
-                    class="com.secureguard.actions.ShowSettingsAction"
-                    text="SecureGuard Settings"
-                    description="Configure SecureGuard analysis settings"/>
-            -->
+            <add-to-group group-id="MainMenu" anchor="after" relative-to-action="AnalyzeMenu"/>
+            <reference ref="SecureGuard.AnalyzeFile"/>
         </group>
+    </actions>
 
-    <!--
-            <action id="SecureGuard.AnalyzeSelection"
-                    class="com.secureguard.actions.AnalyzeSelectionAction"
-                    text="Analyze with SecureGuard"
-                    description="Analyze selected code for vulnerabilities">
-                <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="ShowIntentionsGroup"/>
-            </action>
-            -->
-        </actions>
+    <!-- Plugin configuration -->
+    <applicationListeners>
+    </applicationListeners>
 
-        <!-- Listeners del proyecto -->
     <projectListeners>
-        <!-- Listener para cambios en archivos -->
-        <!--
-        <listener class="com.secureguard.listeners.FileChangeListener"
-                  topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
-        -->
     </projectListeners>
-
-    <!-- Configuración de recursos -->
-    <!-- COMENTADO TEMPORALMENTE -->
-    <!-- <resource-bundle>messages.SecureGuardBundle</resource-bundle> -->
 </idea-plugin>

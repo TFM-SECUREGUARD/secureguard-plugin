@@ -19,6 +19,7 @@ import com.secureguard.analysis.SeverityCalculator;
 import com.secureguard.model.OWASPCategory;
 import com.secureguard.model.SecurityIssue;
 import com.secureguard.model.Severity;
+import com.secureguard.ui.SecurityResultsDialog;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -283,42 +284,8 @@ public class AnalyzeFileAction extends AnAction {
     }
 
     private void showResults(Project project, String fileName, List<SecurityIssue> issues) {
-        if (issues.isEmpty()) {
-            Messages.showInfoMessage(project,
-                    String.format("No security vulnerabilities detected in %s\n\n" +
-                            "SecureGuard analyzed all methods and classes.", fileName),
-                    "SecureGuard - Analysis Complete");
-        } else {
-            StringBuilder message = new StringBuilder();
-            message.append(String.format("Found %d potential vulnerabilities in %s:\n\n",
-                    issues.size(), fileName));
-
-            // Agrupar por severidad
-            long critical = issues.stream().filter(i -> i.getSeverity() == Severity.CRITICAL).count();
-            long high = issues.stream().filter(i -> i.getSeverity() == Severity.HIGH).count();
-            long medium = issues.stream().filter(i -> i.getSeverity() == Severity.MEDIUM).count();
-            long low = issues.stream().filter(i -> i.getSeverity() == Severity.LOW).count();
-
-            if (critical > 0) message.append(String.format("🔴 Critical: %d\n", critical));
-            if (high > 0) message.append(String.format("🟠 High: %d\n", high));
-            if (medium > 0) message.append(String.format("🟡 Medium: %d\n", medium));
-            if (low > 0) message.append(String.format("🔵 Low: %d\n", low));
-
-            message.append("\nTop issues:\n");
-            issues.stream()
-                    .limit(5)
-                    .forEach(issue -> {
-                        message.append(String.format("\n• %s (Line %d)\n  %s\n",
-                                issue.getCategory().getTitle(),
-                                issue.getLineNumber(),
-                                issue.getDescription()));
-                    });
-
-            if (issues.size() > 5) {
-                message.append(String.format("\n... and %d more issues", issues.size() - 5));
-            }
-
-            Messages.showWarningDialog(project, message.toString(), "SecureGuard - Vulnerabilities Found");
-        }
+        // Usar el nuevo diálogo mejorado
+        SecurityResultsDialog dialog = new SecurityResultsDialog(project, fileName, issues);
+        dialog.show();
     }
 }
